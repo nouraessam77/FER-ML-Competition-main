@@ -32,14 +32,9 @@ leaderboard_file = "results.csv"
 # Create entry
 new_entry = {
     'submission': team_name,
-    'accuracy': accuracy,
-    'f1_score': f1,
+    'accuracy': acc*100,
     'timestamp': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
 }
-if error:
-    new_entry['error'] = error
-    new_entry['accuracy'] = 0.0
-    new_entry['f1_score'] = 0.0
 # Read existing leaderboard or create new
 if os.path.exists(leaderboard_file):
     leaderboard = pd.read_csv(leaderboard_file)
