@@ -28,3 +28,29 @@ os.makedirs("results", exist_ok=True)
 result_file = f"results/{team_name}_acc_{acc*100:.2f}.csv"
 merged.to_csv(result_file, index=False)
 print(f"Saved evaluated submission to {result_file}")
+leaderboard_file = "results.csv"
+# Create entry
+new_entry = {
+    'submission': team_name,
+    'accuracy': accuracy,
+    'f1_score': f1,
+    'timestamp': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+}
+if error:
+    new_entry['error'] = error
+    new_entry['accuracy'] = 0.0
+    new_entry['f1_score'] = 0.0
+# Read existing leaderboard or create new
+if os.path.exists(leaderboard_file):
+    leaderboard = pd.read_csv(leaderboard_file)
+    # Remove existing entry for this team
+    leaderboard = leaderboard[leaderboard['submission'] != team_name]
+else:
+    leaderboard = pd.DataFrame(columns=['submission', 'accuracy', 'f1_score', 'timestamp', 'error'])
+# Add new entry
+leaderboard = pd.concat([leaderboard, pd.DataFrame([new_entry])], ignore_index=True)
+# Save
+leaderboard.to_csv(leaderboard_file, index=False)   
+print(f"Updated leaderboard: {leaderboard_file}")
+print("Current leaderboard:")
+print(leaderboard.to_string(index=False))
