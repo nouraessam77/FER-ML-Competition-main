@@ -2,7 +2,7 @@ name: Evaluate Submission
 
 on:
   pull_request:
-      types: [closed||open]
+      types: [open,closed]
       paths:
       - 'submission/*.csv'  # Trigger only on submission CSVs
 
