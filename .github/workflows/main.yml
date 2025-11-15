@@ -1,8 +1,8 @@
 name: Evaluate Submission
 
 on:
-  pull_request_target:
-    paths:
+  pull_request:
+      paths:
       - 'submission/*.csv'  # Trigger only on submission CSVs
 
 jobs:
