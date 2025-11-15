@@ -54,14 +54,27 @@ jobs:
           done
 
       # 6️⃣ Commit and push updated leaderboard (results.csv) to main branch
+         # Commit results with force push (use carefully)
       - name: Commit leaderboard
         run: |
+          echo "=== Setting up git ==="
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git checkout main
-          git push origin main
-          git add results.csv
-          git commit -m "Update leaderboard from PR #${{ github.event.number }}" || echo "No changes to commit"
-          git push origin main
+          
+          echo "=== Pulling and overwrite local changes ==="
+          git fetch origin
+          git reset --hard origin/main
+          
+          echo "=== Checking results.csv ==="
+          if [ -f "results.csv" ]; then
+            echo "results.csv content:"
+            cat results.csv
+            git add results.csv
+            git commit -m "Update leaderboard from PR #${{ github.event.number }} [Automated]"
+            echo "=== Pushing changes ==="
+            git push origin main
+          else
+            echo "results.csv not found - skipping commit"
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
