@@ -1,0 +1,56 @@
+name: Auto-Merge After Evaluation
+
+on:
+  workflow_run:
+    workflows: ["Evaluate Submission"]
+    types:
+      - completed
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Get PR number
+        id: get_pr
+        run: |
+          PR_NUMBER=$(gh pr list --state open --json number,headRefName --jq ".[] | select(.headRefName==\"${{ github.event.workflow_run.head_branch }}\") | .number")
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Approve and merge PR
+        if: steps.get_pr.outputs.pr_number != ''
+        run: |
+          PR_NUM=${{ steps.get_pr.outputs.pr_number }}
+          
+          # Check if PR only modifies submission folder
+          CHANGED_FILES=$(gh pr view $PR_NUM --json files --jq '.files[].path')
+          
+          VALID=true
+          for file in $CHANGED_FILES; do
+            if [[ ! "$file" =~ ^submission/ ]]; then
+              VALID=false
+              break
+            fi
+          done
+          
+          if [ "$VALID" = true ]; then
+            # Approve
+            gh pr review $PR_NUM --approve --body "✅ Evaluation passed! Auto-merging submission."
+            
+            # Merge
+            gh pr merge $PR_NUM --squash --auto
+          else
+            echo "PR modifies files outside submission folder - skipping auto-merge"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
