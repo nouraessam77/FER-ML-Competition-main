@@ -1,56 +1,86 @@
-name: Auto-Merge After Evaluation
+name: Auto-Approve Submissions
 
 on:
-  workflow_run:
-    workflows: ["Evaluate Submission"]
-    types:
-      - completed
+  pull_request_target:
+    types: [opened, synchronize]
+    paths:
+      - 'submission/**'
 
 permissions:
   pull-requests: write
   contents: write
 
 jobs:
-  auto-merge:
+  auto-approve:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
       
-      - name: Get PR number
-        id: get_pr
+      - name: Check if PR only adds files to submission folder
+        id: check_changes
         run: |
-          PR_NUMBER=$(gh pr list --state open --json number,headRefName --jq ".[] | select(.headRefName==\"${{ github.event.workflow_run.head_branch }}\") | .number")
-          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Approve and merge PR
-        if: steps.get_pr.outputs.pr_number != ''
-        run: |
-          PR_NUM=${{ steps.get_pr.outputs.pr_number }}
+          # Get changed files
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD)
           
-          # Check if PR only modifies submission folder
-          CHANGED_FILES=$(gh pr view $PR_NUM --json files --jq '.files[].path')
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
           
+          # Check if all changes are in submission/ folder and are additions/modifications only
           VALID=true
-          for file in $CHANGED_FILES; do
+          while IFS= read -r file; do
             if [[ ! "$file" =~ ^submission/ ]]; then
+              echo "❌ File outside submission folder: $file"
               VALID=false
-              break
             fi
-          done
+          done <<< "$CHANGED_FILES"
           
-          if [ "$VALID" = true ]; then
-            # Approve
-            gh pr review $PR_NUM --approve --body "✅ Evaluation passed! Auto-merging submission."
-            
-            # Merge
-            gh pr merge $PR_NUM --squash --auto
-          else
-            echo "PR modifies files outside submission folder - skipping auto-merge"
+          # Check for deletions (we don't want to auto-approve deletions)
+          DELETED=$(git diff --diff-filter=D --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD)
+          if [ ! -z "$DELETED" ]; then
+            echo "❌ PR contains deletions"
+            VALID=false
           fi
+          
+          echo "valid=$VALID" >> $GITHUB_OUTPUT
+      
+      - name: Approve PR
+        if: steps.check_changes.outputs.valid == 'true'
+        uses: hmarr/auto-approve-action@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Enable auto-merge
+        if: steps.check_changes.outputs.valid == 'true'
+        run: |
+          gh pr merge ${{ github.event.pull_request.number }} --auto --squash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Add comment
+        if: steps.check_changes.outputs.valid == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ **Submission Auto-Approved**\n\nThis PR only adds files to the `submission/` folder and has been automatically approved. It will be merged after the evaluation passes.'
+            })
+      
+      - name: Reject PR with comment
+        if: steps.check_changes.outputs.valid == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ **Auto-Approval Rejected**\n\nThis PR modifies files outside the `submission/` folder or deletes files. Manual review is required.\n\n**Rules:**\n- Only add files to `submission/` folder\n- No deletions allowed\n- No modifications to other files'
+            })
